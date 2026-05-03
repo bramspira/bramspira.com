@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bram's World</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #000; overflow: hidden; font-family: 'Courier New', monospace; }
+  #canvas { display: block; width: 100vw; height: 100vh; }
+
+  #overlay {
+    position: fixed; inset: 0; background: #0a0a0a;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    z-index: 100; transition: opacity 0.8s ease;
+  }
+  #overlay h1 {
+    font-size: clamp(3rem, 10vw, 8rem); font-weight: 900;
+    letter-spacing: -0.02em; color: #fff; line-height: 0.9;
+  }
+  #overlay h1 span { color: #FFD700; }
+  #overlay p { margin-top: 2rem; color: #666; font-size: 0.85rem; letter-spacing: 0.2em; text-transform: uppercase; }
+  #enter-btn {
+    margin-top: 3rem; padding: 1rem 3rem; border: 1px solid #333;
+    background: transparent; color: #fff; font-family: inherit;
+    font-size: 0.8rem; letter-spacing: 0.3em; text-transform: uppercase;
+    cursor: pointer; transition: all 0.3s;
+  }
+  #enter-btn:hover { background: #FFD700; color: #000; border-color: #FFD700; }
+
+  #crosshair {
+    position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%);
+    pointer-events: none; opacity: 0; transition: opacity 0.5s;
+  }
+  #crosshair::before, #crosshair::after {
+    content: ''; position: absolute; background: rgba(255,255,255,0.8);
+  }
+  #crosshair::before { width: 1px; height: 16px; top: -8px; left: 0; }
+  #crosshair::after  { width: 16px; height: 1px; left: -8px; top: 0; }
+
+  #hud {
+    position: fixed; bottom: 2rem; left: 50%; transform: translateX(-50%);
+    color: rgba(255,255,255,0.4); font-size: 0.7rem; letter-spacing: 0.2em;
+    text-transform: uppercase; opacity: 0; transition: opacity 0.5s; pointer-events: none;
+  }
+
+  #interact-hint {
+    position: fixed; top: 42%; left: 50%; transform: translateX(-50%);
+    background: rgba(0,0,0,0.7); border: 1px solid rgba(255,215,0,0.5);
+    color: #FFD700; padding: 0.5rem 1.5rem; font-size: 0.75rem;
+    letter-spacing: 0.15em; text-transform: uppercase;
+    opacity: 0; transition: opacity 0.2s; pointer-events: none;
+  }
+
+  #modal {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.85);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 50; opacity: 0; pointer-events: none; transition: opacity 0.3s;
+  }
+  #modal.active { opacity: 1; pointer-events: all; }
+  #modal-box { background: #111; border: 1px solid #333; padding: 3rem; max-width: 500px; width: 90%; }
+  #modal-box h2 { color: #FFD700; font-size: 1.2rem; letter-spacing: 0.1em; margin-bottom: 1rem; }
+  #modal-box p  { color: #aaa; font-size: 0.9rem; line-height: 1.8; }
+  #modal-close {
+    margin-top: 2rem; display: block; background: transparent; border: 1px solid #333;
+    color: #fff; font-family: inherit; font-size: 0.75rem; letter-spacing: 0.2em;
+    text-transform: uppercase; padding: 0.75rem 2rem; cursor: pointer; transition: all 0.2s;
+  }
+  #modal-close:hover { border-color: #FFD700; color: #FFD700; }
+</style>
+</head>
+<body>
+
+<canvas id="canvas"></canvas>
+
+<div id="overlay">
+  <h1>BRAM<br><span>SPIRA</span></h1>
+  <p>Personal Universe</p>
+  <button id="enter-btn">Enter →</button>
+</div>
+
+<div id="crosshair"></div>
+<div id="hud">WASD · Move &nbsp;|&nbsp; Space · Jump &nbsp;|&nbsp; Mouse · Look &nbsp;|&nbsp; E · Interact</div>
+<div id="interact-hint">[ E ] Interact</div>
+
+<div id="modal">
+  <div id="modal-box">
+    <h2 id="modal-title"></h2>
+    <p id="modal-body"></p>
+    <button id="modal-close">Close [ ESC ]</button>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+// ── DOM refs ──
+const canvas       = document.getElementById('canvas');
+const overlay      = document.getElementById('overlay');
+const crosshair    = document.getElementById('crosshair');
+const hud          = document.getElementById('hud');
+const interactHint = document.getElementById('interact-hint');
+const modal        = document.getElementById('modal');
+const modalTitle   = document.getElementById('modal-title');
+const modalBody    = document.getElementById('modal-body');
+const modalClose   = document.getElementById('modal-close');
+
+// ── SCENE ──
+const scene    = new THREE.Scene();
+scene.background = new THREE.Color(0x3a2e22);
+scene.fog        = new THREE.Fog(0x3a2e22, 10, 28);
+
+const camera = new THREE.PerspectiveCamera(75, innerWidth/innerHeight, 0.1, 100);
+camera.position.set(0, 1.7, 5);
+camera.rotation.order = 'YXZ';
+
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+
+// ── LIGHTING ──
+scene.add(new THREE.AmbientLight(0xfff5e0, 1.2));
+
+function addCeilingLight(x, y, z, color, intensity, dist) {
+  const l = new THREE.PointLight(color, intensity, dist);
+  l.position.set(x, y, z);
+  l.castShadow = true;
+  scene.add(l);
+  const bulb = new THREE.Mesh(
+    new THREE.SphereGeometry(0.07, 8, 8),
+    new THREE.MeshBasicMaterial({ color })
+  );
+  bulb.position.set(x, y+0.1, z);
+  scene.add(bulb);
+  return l;
+}
+
+addCeilingLight(0,  2.8,  0,  0xffd580, 6,   18);
+addCeilingLight(-5, 2.8, -5,  0xffd580, 4,   14);
+addCeilingLight( 5, 2.8, -5,  0xffd580, 4,   14);
+addCeilingLight(-5, 2.8,  5,  0xffd580, 3.5, 14);
+
+const lampGlow   = new THREE.PointLight(0xff8833, 3.5, 8);
+lampGlow.position.set(-6, 1.5, 2);
+scene.add(lampGlow);
+
+const screenGlow = new THREE.PointLight(0x4488ff, 0.8, 3);
+screenGlow.position.set(-4.5, 1.5, -5.5);
+scene.add(screenGlow);
+
+const deskLamp   = new THREE.PointLight(0xffee88, 1.2, 4);
+deskLamp.position.set(-3.3, 1.4, -5.5);
+scene.add(deskLamp);
+
+const winLight   = new THREE.PointLight(0x88aaff, 0.6, 6);
+winLight.position.set(6.5, 3, -3);
+scene.add(winLight);
+
+// ── HELPERS ──
+function box(w, h, d, mat, x, y, z) {
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+  m.position.set(x, y, z);
+  m.castShadow = m.receiveShadow = true;
+  scene.add(m);
+  return m;
+}
+function cyl(rt, rb, h, seg, mat, x, y, z) {
+  const m = new THREE.Mesh(new THREE.CylinderGeometry(rt, rb, h, seg), mat);
+  m.position.set(x, y, z);
+  m.castShadow = m.receiveShadow = true;
+  scene.add(m);
+  return m;
+}
+function lam(color, extra) {
+  return new THREE.MeshLambertMaterial({ color, ...extra });
+}
+
+// ── MATERIALS ──
+const mWall    = lam(0x8a7660);
+const mFloor   = lam(0x7a5c3a);
+const mCeil    = lam(0x6a5f50);
+const mWood    = lam(0x5c3a1e);
+const mDwood   = lam(0x3a2010);
+const mCushion = lam(0x4a3545);
+const mMetal   = lam(0x888888);
+const mWhite   = lam(0xe8e0d0);
+const mPlant   = lam(0x2d5a1b);
+const mPot     = lam(0x8b5e3c);
+const mTrim    = lam(0x1a1208);
+const mScreen  = new THREE.MeshBasicMaterial({ color: 0x223355 });
+const mInvis   = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0 });
+
+// ── ROOM ──
+const RW=16, RH=6, RD=16;
+box(RW, 0.1, RD, mFloor, 0, 0,    0);
+box(RW, 0.1, RD, mCeil,  0, RH,   0);
+box(RW, RH, 0.2, mWall,  0, RH/2, -RD/2);
+box(RW, RH, 0.2, mWall,  0, RH/2,  RD/2);
+box(0.2, RH, RD, mWall, -RW/2, RH/2, 0);
+box(0.2, RH, RD, mWall,  RW/2, RH/2, 0);
+box(RW, 0.15, 0.05, mTrim, 0, 0.075, -RD/2+0.15);
+box(RW, 0.15, 0.05, mTrim, 0, 0.075,  RD/2-0.15);
+box(0.05, 0.15, RD, mTrim, -RW/2+0.15, 0.075, 0);
+box(0.05, 0.15, RD, mTrim,  RW/2-0.15, 0.075, 0);
+
+// ── DESK ──
+box(3,    0.08, 1.2, mDwood, -4.5, 0.85, -5.5);
+box(0.08, 0.85, 1.2, mWood,  -3.1, 0.42, -5.5);
+box(0.08, 0.85, 1.2, mWood,  -5.9, 0.42, -5.5);
+box(2.8,  0.08, 1.0, mDwood, -4.5, 0.5,  -5.5);
+box(1.4,  0.9,  0.05, lam(0x111111), -4.5, 1.5, -5.9); // monitor back
+box(1.3,  0.8,  0.02, mScreen,        -4.5, 1.5, -5.87); // screen
+box(0.2,  0.3,  0.1,  mMetal,         -4.5, 0.98,-5.9);  // stand
+box(0.8,  0.02, 0.3,  mMetal,         -4.5, 0.9, -5.3);  // keyboard
+box(0.12, 0.02, 0.2,  mMetal,         -3.8, 0.9, -5.2);  // mouse
+cyl(0.04, 0.04, 0.6, 8, mMetal, -3.3, 1.15, -5.5); // lamp pole
+box(0.35, 0.04, 0.2, mMetal, -3.3, 1.48, -5.5);     // lamp arm
+
+// ── BOOKSHELF ──
+box(0.2, 4,    1.5, mDwood, 7.6, 2,   -5);
+box(1.5, 0.08, 1.3, mWood,  6.9, 1.0, -5);
+box(1.5, 0.08, 1.3, mWood,  6.9, 2.0, -5);
+box(1.5, 0.08, 1.3, mWood,  6.9, 3.0, -5);
+box(1.5, 0.08, 1.3, mWood,  6.9, 3.9, -5);
+const bkCols = [0x8b2020,0x205f8b,0x208b40,0x8b7020,0x6b208b,0x8b4020];
+for (let s=0; s<3; s++) {
+  let bx = 6.3;
+  for (let i=0; i<5; i++) {
+    const bw = 0.12 + Math.random()*0.08;
+    const bh = 0.60 + Math.random()*0.25;
+    box(bw, bh, 1.1, lam(bkCols[(s*5+i)%6]), bx, 1.05+s, -5);
+    bx += bw + 0.02;
+  }
+}
+
+// ── SOFA ──
+box(3.5, 0.5,  1.2,  mCushion, -4.5,  0.35, 1);
+box(3.5, 0.7,  0.25, mCushion, -4.5,  0.75, 1.5);
+box(0.25, 0.7, 1.2,  mCushion, -2.85, 0.75, 1);
+box(0.25, 0.7, 1.2,  mCushion, -6.15, 0.75, 1);
+[0x5a3d55,0x3d4555,0x553d3d].forEach((c,i) =>
+  box(1, 0.15, 1.0, lam(c), -3.3-i*1.1, 0.65, 1));
+box(0.45, 0.35, 0.12, lam(0xc4a882), -6, 0.9, 0.9);
+
+// ── COFFEE TABLE ──
+box(1.8, 0.06, 0.9, mDwood, -4.5, 0.5, 2.8);
+[[-3.65,2.4],[-5.35,2.4],[-3.65,3.2],[-5.35,3.2]].forEach(([x,z]) =>
+  box(0.05, 0.5, 0.05, mWood, x, 0.25, z));
+cyl(0.08, 0.06, 0.15, 12, mWhite,       -4.5, 0.58, 2.8);
+cyl(0.05, 0.04, 0.02, 12, lam(0x4a2800),-4.5, 0.66, 2.8);
+
+// ── FLOOR LAMP ──
+cyl(0.04, 0.06, 0.05, 8,  mMetal,                        -6.5, 0.025, 2.5);
+cyl(0.025,0.025,1.8,  8,  mMetal,                        -6.5, 0.95,  2.5);
+cyl(0.35, 0.25, 0.45, 16, lam(0xf5e6c8),                 -6.5, 2.1,   2.5);
+cyl(0.05, 0.05, 0.05, 8,  new THREE.MeshBasicMaterial({color:0xffee88}), -6.5, 1.85, 2.5);
+
+// ── RUG ──
+box(5.0, 0.010, 3.5, lam(0x4a3828), -4.5, 0.055, 1.8);
+box(4.6, 0.012, 3.1, lam(0x6b5040), -4.5, 0.056, 1.8);
+
+// ── CORNER PLANT ──
+cyl(0.2, 0.25, 0.4, 8, mPot, 6.5, 0.2, 6.5);
+for (let i=0; i<6; i++) {
+  const a = (i/6)*Math.PI*2;
+  const leaf = new THREE.Mesh(new THREE.SphereGeometry(0.25+Math.random()*0.1,8,6), mPlant);
+  leaf.position.set(6.5+Math.cos(a)*0.21, 0.7+Math.random()*0.4, 6.5+Math.sin(a)*0.21);
+  leaf.scale.y = 1.5;
+  scene.add(leaf);
+}
+cyl(0.03, 0.04, 0.6, 6, lam(0x4a2800), 6.5, 0.5, 6.5);
+
+// ── SIDE TABLE + SMALL PLANT ──
+cyl(0.35, 0.35, 0.55, 12, mWood, -7, 0.275, -0.5);
+cyl(0.12, 0.15, 0.20,  8, mPot,  -7, 0.58,  -0.5);
+const sl = new THREE.Mesh(new THREE.SphereGeometry(0.2,8,6), mPlant);
+sl.position.set(-7, 0.85, -0.5); sl.scale.set(1, 1.8, 1); scene.add(sl);
+
+// ── WALL ART ──
+box(2.5, 1.8, 0.05, mDwood,      2, 3.2, -7.85);
+box(2.3, 1.6, 0.03, lam(0xe8dcc8),2, 3.2, -7.82);
+box(0.8, 0.8, 0.01, lam(0x8b2020),1.4, 3.4, -7.81);
+box(0.7, 0.6, 0.01, lam(0x205f8b),2.4, 3.0, -7.81);
+box(0.5, 1.2, 0.01, lam(0xFFD700),1.9, 3.3, -7.81);
+
+// ── WINDOW ──
+box(0.05, 2.5, 2.0, lam(0x1a1510), 7.87, 3, -3);
+box(0.03, 2.3, 1.8, lam(0x88ccff, {transparent:true,opacity:0.2}), 7.86, 3, -3);
+box(0.04, 2.3, 0.04, mTrim, 7.86, 3, -3);
+box(0.04, 0.04, 1.8, mTrim, 7.86, 3, -3);
+
+// ── RECORD PLAYER ──
+box(0.7,  0.08, 0.7, mDwood,      3, 0.9,  -7.5);
+cyl(0.28, 0.28, 0.02, 24, lam(0x111111), 3, 0.95, -7.5);
+cyl(0.05, 0.05, 0.03, 12, lam(0xcc2200), 3, 0.97, -7.5);
+box(1, 0.05, 0.8, mDwood, 3, 0.60, -7.5);
+box(1, 1.00, 0.05,mDwood, 3, 0.50, -7.82);
+box(1, 0.05, 0.8, mDwood, 3, 0.05, -7.5);
+
+// ── INTERACTABLES ──
+const interactables = [];
+function addInteractable(x, y, z, w, h, d, title, body) {
+  const mesh = box(w, h, d, mInvis, x, y, z);
+  interactables.push({ mesh, title, body });
+}
+
+addInteractable(-4.5, 1.5, -5.7, 1.4, 0.9, 0.3,
+  'PORTFOLIO',
+  "This is where my work lives. Projects, experiments, and things I built because I couldn't help myself. Gallery coming soon.");
+
+addInteractable(6.9, 2.0, -5.0, 1.8, 4.0, 1.5,
+  'READING LIST',
+  "Books that changed how I think. Currently reading: everything at once, finishing nothing. Very on-brand.");
+
+addInteractable(2.0, 3.2, -7.8, 2.5, 1.8, 0.2,
+  'WALL ART',
+  "Original piece. Acquired under mysterious circumstances. The artist was unavailable for comment.");
+
+addInteractable(3.0, 0.95, -7.5, 0.7, 0.3, 0.7,
+  'NOW PLAYING',
+  "Current rotation: something with too much reverb and not enough drums. Playlist coming when I actually curate one.");
+
+addInteractable(6.5, 0.6, 6.5, 0.9, 1.2, 0.9,
+  'MONSTERA',
+  "Her name is Greg. She's thriving, unlike my inbox. I water her on Sundays and apologize when I forget.");
+
+addInteractable(-4.5, 0.6, 1.0, 3.5, 1.2, 1.5,
+  'THE SOFA',
+  "Where ideas crystallize or die. 70% of my thinking happens here. The other 30% in the shower.");
+
+// ── PLAYER STATE ──
+const keys = {};
+let yaw = 0, pitch = 0;
+let isLocked = false;
+let inModal  = false;
+let nearObj  = null;
+let yVel     = 0;
+let onGround = true;
+
+const SPEED   = 0.065;
+const LIMIT   = 7.5;
+const GRAVITY = -0.012;
+const JUMP    = 0.18;
+
+// ── EVENT LISTENERS ──
+document.addEventListener('keydown', e => {
+  keys[e.code] = true;
+
+  if (e.code === 'Space') {
+    e.preventDefault();
+    if (onGround && isLocked && !inModal) {
+      yVel = JUMP;
+      onGround = false;
+    }
+  }
+
+  if (e.code === 'KeyE' && nearObj && isLocked && !inModal) {
+    openModal(nearObj.title, nearObj.body);
+  }
+
+  if (e.code === 'Escape' && inModal) {
+    closeModal();
+  }
+});
+
+document.addEventListener('keyup', e => {
+  keys[e.code] = false;
+});
+
+document.addEventListener('mousemove', e => {
+  if (!isLocked || inModal) return;
+  yaw   -= e.movementX * 0.002;
+  pitch -= e.movementY * 0.002;
+  pitch  = Math.max(-Math.PI/3, Math.min(Math.PI/3, pitch));
+});
+
+document.addEventListener('pointerlockchange', () => {
+  isLocked = (document.pointerLockElement === canvas);
+  crosshair.style.opacity = isLocked ? '1' : '0';
+  hud.style.opacity       = isLocked ? '1' : '0';
+});
+
+canvas.addEventListener('click', () => {
+  if (!isLocked && !inModal && overlay.style.display === 'none') {
+    canvas.requestPointerLock();
+  }
+});
+
+document.getElementById('enter-btn').addEventListener('click', () => {
+  overlay.style.opacity = '0';
+  setTimeout(() => {
+    overlay.style.display = 'none';
+    canvas.requestPointerLock();
+  }, 800);
+});
+
+// ── MODAL ──
+function openModal(title, body) {
+  document.exitPointerLock();
+  modalTitle.textContent = title;
+  modalBody.textContent  = body;
+  modal.classList.add('active');
+  inModal = true;
+}
+
+function closeModal() {
+  modal.classList.remove('active');
+  inModal = false;
+  setTimeout(() => canvas.requestPointerLock(), 200);
+}
+
+modalClose.addEventListener('click', closeModal);
+
+// ── ANIMATE ──
+const raycaster    = new THREE.Raycaster();
+const interactMesh = interactables.map(i => i.mesh);
+let t = 0;
+
+function animate() {
+  requestAnimationFrame(animate);
+  t += 0.01;
+
+  // Always update camera rotation
+  camera.rotation.y = yaw;
+  camera.rotation.x = pitch;
+
+  if (isLocked && !inModal) {
+    // Movement
+    const dir = new THREE.Vector3();
+    if (keys['KeyW']) dir.z -= 1;
+    if (keys['KeyS']) dir.z += 1;
+    if (keys['KeyA']) dir.x -= 1;
+    if (keys['KeyD']) dir.x += 1;
+
+    if (dir.lengthSq() > 0) {
+      dir.normalize().multiplyScalar(SPEED);
+      dir.applyEuler(new THREE.Euler(0, yaw, 0));
+      const nx = camera.position.x + dir.x;
+      const nz = camera.position.z + dir.z;
+      if (Math.abs(nx) < LIMIT) camera.position.x = nx;
+      if (Math.abs(nz) < LIMIT) camera.position.z = nz;
+    }
+
+    // Gravity + jump
+    yVel += GRAVITY;
+    camera.position.y += yVel;
+    if (camera.position.y <= 1.7) {
+      camera.position.y = 1.7;
+      yVel = 0;
+      onGround = true;
+    }
+
+    // Interaction raycast
+    raycaster.setFromCamera({ x: 0, y: 0 }, camera);
+    const hits = raycaster.intersectObjects(interactMesh);
+    nearObj = (hits.length > 0 && hits[0].distance < 4)
+      ? (interactables.find(i => i.mesh === hits[0].object) || null)
+      : null;
+    interactHint.style.opacity = nearObj ? '1' : '0';
+  }
+
+  // Animate lights
+  lampGlow.intensity   = 3.3 + Math.sin(t * 0.7)  * 0.2;
+  screenGlow.intensity = 0.6 + Math.sin(t * 2.1)  * 0.1;
+  deskLamp.intensity   = 1.1 + Math.sin(t * 1.3)  * 0.1;
+
+  renderer.render(scene, camera);
+}
+
+animate();
+
+window.addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+</script>
+</body>
+</html>
