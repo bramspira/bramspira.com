@@ -6,46 +6,49 @@
 <title>Bram's World</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { background: #000; overflow: hidden; font-family: 'Courier New', monospace; }
+  body { background: #05060a; overflow: hidden; font-family: 'Courier New', monospace; }
   #canvas { display: block; width: 100vw; height: 100vh; }
 
   #overlay {
-    position: fixed; inset: 0; background: #0a0a0a;
+    position: fixed; inset: 0; background: #05060a;
     display: flex; flex-direction: column;
     align-items: center; justify-content: center;
     z-index: 100; transition: opacity 0.8s ease;
   }
   #overlay h1 {
     font-size: clamp(3rem, 10vw, 8rem); font-weight: 900;
-    letter-spacing: -0.02em; color: #fff; line-height: 0.9; text-align: center;
+    letter-spacing: -0.02em; color: #f4ecd8; line-height: 0.9; text-align: center;
   }
-  #overlay h1 span { color: #FFD700; }
-  #overlay p { margin-top: 2rem; color: #666; font-size: 0.85rem; letter-spacing: 0.2em; text-transform: uppercase; }
+  #overlay h1 span { color: #d9a441; }
+  #overlay p { margin-top: 2rem; color: #6b6250; font-size: 0.85rem; letter-spacing: 0.2em; text-transform: uppercase; }
 
   #menu { margin-top: 3rem; display: flex; gap: 1.25rem; flex-wrap: wrap; justify-content: center; }
   .menu-btn {
-    padding: 1rem 2.5rem; border: 1px solid #333;
-    background: transparent; color: #fff; font-family: inherit;
+    padding: 1rem 2.5rem; border: 1px solid #3a3320;
+    background: transparent; color: #f4ecd8; font-family: inherit;
     font-size: 0.8rem; letter-spacing: 0.3em; text-transform: uppercase;
     cursor: pointer; transition: all 0.3s; text-decoration: none;
   }
-  .menu-btn:hover { background: #FFD700; color: #000; border-color: #FFD700; }
-  .menu-btn.secondary { color: #888; }
-  .menu-btn.secondary:hover { background: #222; color: #fff; border-color: #555; }
+  .menu-btn:hover { background: #d9a441; color: #100c04; border-color: #d9a441; }
+  .menu-btn.secondary { color: #7a7360; border-color: #2a271c; }
+  .menu-btn.secondary:hover { background: #1c1a12; color: #f4ecd8; border-color: #4a4432; }
+
+  #loading { position: fixed; bottom: 2rem; left: 50%; transform: translateX(-50%);
+    color: #4a4534; font-size: 0.7rem; letter-spacing: 0.25em; text-transform: uppercase; z-index: 101; }
 
   #crosshair {
     position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%);
     pointer-events: none; opacity: 0; transition: opacity 0.5s;
   }
   #crosshair::before, #crosshair::after {
-    content: ''; position: absolute; background: rgba(255,255,255,0.7);
+    content: ''; position: absolute; background: rgba(240,230,200,0.6);
   }
-  #crosshair::before { width: 1px; height: 14px; top: -7px; left: 0; }
-  #crosshair::after  { width: 14px; height: 1px; left: -7px; top: 0; }
+  #crosshair::before { width: 1px; height: 12px; top: -6px; left: 0; }
+  #crosshair::after  { width: 12px; height: 1px; left: -6px; top: 0; }
 
   #hud {
     position: fixed; bottom: 2rem; left: 50%; transform: translateX(-50%);
-    color: rgba(255,255,255,0.4); font-size: 0.7rem; letter-spacing: 0.2em;
+    color: rgba(240,230,200,0.35); font-size: 0.7rem; letter-spacing: 0.2em;
     text-transform: uppercase; opacity: 0; transition: opacity 0.5s; pointer-events: none;
   }
 </style>
@@ -56,7 +59,7 @@
 
 <div id="overlay">
   <h1>BRAM<br><span>SPIRA</span></h1>
-  <p>Personal Universe</p>
+  <p>The Library</p>
   <div id="menu">
     <button id="enter-btn" class="menu-btn">Enter World →</button>
     <a href="resume.html" class="menu-btn secondary">Boring Version</a>
@@ -67,171 +70,306 @@
 <div id="hud">WASD · Move &nbsp;|&nbsp; Space · Jump &nbsp;|&nbsp; Mouse · Look</div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://unpkg.com/three@0.128.0/examples/js/postprocessing/EffectComposer.js"></script>
+<script src="https://unpkg.com/three@0.128.0/examples/js/shaders/CopyShader.js"></script>
+<script src="https://unpkg.com/three@0.128.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
+<script src="https://unpkg.com/three@0.128.0/examples/js/shaders/FXAAShader.js"></script>
+<script src="https://unpkg.com/three@0.128.0/examples/js/postprocessing/RenderPass.js"></script>
+<script src="https://unpkg.com/three@0.128.0/examples/js/postprocessing/ShaderPass.js"></script>
+<script src="https://unpkg.com/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
 <script>
-// ── DOM refs ──
+// ── DOM ──
 const canvas    = document.getElementById('canvas');
 const overlay   = document.getElementById('overlay');
 const crosshair = document.getElementById('crosshair');
 const hud       = document.getElementById('hud');
 
 // ── RENDERER ──
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: false });
 renderer.setSize(innerWidth, innerHeight);
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+const PR = Math.min(devicePixelRatio, 2);
+renderer.setPixelRatio(PR);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.outputEncoding = THREE.sRGBEncoding;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.05;
+renderer.toneMappingExposure = 1.18;
 
-// ── SCENE + CAMERA ──
+// ── SCENE ──
+const FOG = 0x12253d;
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0xdfe4ea);
-scene.fog = new THREE.Fog(0xdfe4ea, 14, 34);
+scene.background = new THREE.Color(FOG);
+scene.fog = new THREE.FogExp2(FOG, 0.017);
 
-const camera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.1, 100);
-camera.position.set(0, 1.7, 6);
+const camera = new THREE.PerspectiveCamera(68, innerWidth / innerHeight, 0.1, 200);
+camera.position.set(0, 1.7, 9);
 camera.rotation.order = 'YXZ';
 
-// ── LIGHTING ──
-const hemi = new THREE.HemisphereLight(0xffffff, 0x9a8b7a, 0.9);
-scene.add(hemi);
-
-const key = new THREE.DirectionalLight(0xfff4e0, 2.2);
-key.position.set(6, 10, 4);
-key.castShadow = true;
-key.shadow.mapSize.set(2048, 2048);
-key.shadow.camera.near = 1;
-key.shadow.camera.far = 40;
-key.shadow.camera.left = -12;
-key.shadow.camera.right = 12;
-key.shadow.camera.top = 12;
-key.shadow.camera.bottom = -12;
-key.shadow.bias = -0.0004;
-key.shadow.radius = 4;
-scene.add(key);
-
-const fill = new THREE.DirectionalLight(0xbcd2ff, 0.5);
-fill.position.set(-8, 6, -6);
-scene.add(fill);
-
-// ── TEXTURE ──
-function gridTexture() {
-  const size = 512, c = document.createElement('canvas');
-  c.width = c.height = size;
-  const ctx = c.getContext('2d');
-  ctx.fillStyle = '#c8ccd2';
-  ctx.fillRect(0, 0, size, size);
-  ctx.strokeStyle = '#b3b8bf';
-  ctx.lineWidth = 2;
-  for (let i = 0; i <= size; i += 64) {
-    ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, size); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(size, i); ctx.stroke();
+// ── PROCEDURAL TEXTURES ──
+function bookTexture() {
+  const S = 512, c = document.createElement('canvas'); c.width = c.height = S;
+  const x = c.getContext('2d');
+  x.fillStyle = '#0a0806'; x.fillRect(0, 0, S, S);
+  const cols = ['#5a2b26','#6e3a1e','#2f4358','#2c4e42','#5a4d2c','#402742','#6f6035','#48232e','#343a46','#5a3320','#7a2f2f','#294a4a'];
+  const shelves = 7, sh = S / shelves;
+  for (let s = 0; s < shelves; s++) {
+    const y0 = s * sh, base = y0 + sh - 6;
+    let bx = 2;
+    while (bx < S) {
+      const bw = 8 + Math.random() * 20;
+      const bh = sh * (0.68 + Math.random() * 0.28);
+      const col = cols[(Math.random() * cols.length) | 0];
+      x.fillStyle = col;
+      x.fillRect(bx, base - bh, bw - 2, bh);
+      // shading + top cap
+      x.fillStyle = 'rgba(0,0,0,0.28)';
+      x.fillRect(bx + bw - 4, base - bh, 3, bh);
+      x.fillStyle = 'rgba(255,240,210,0.06)';
+      x.fillRect(bx, base - bh, 2, bh);
+      if (Math.random() > 0.78) { x.fillStyle = 'rgba(217,164,65,0.55)'; x.fillRect(bx, base - bh * 0.6, bw - 2, 2); }
+      bx += bw;
+    }
+    // wooden shelf ledge
+    x.fillStyle = '#1a1008'; x.fillRect(0, base + 1, S, 6);
+    x.fillStyle = 'rgba(0,0,0,0.4)'; x.fillRect(0, base + 6, S, 3);
   }
-  const tex = new THREE.CanvasTexture(c);
-  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-  tex.repeat.set(8, 8);
-  tex.anisotropy = 8;
-  tex.encoding = THREE.sRGBEncoding;
-  return tex;
+  // grime / depth
+  for (let i = 0; i < 1600; i++) {
+    x.fillStyle = `rgba(0,0,0,${Math.random() * 0.06})`;
+    x.fillRect(Math.random() * S, Math.random() * S, 2, 2);
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 8; t.encoding = THREE.sRGBEncoding;
+  return t;
 }
 
-// ── ROOM ──
-const RW = 16, RH = 6, RD = 16;
-
-const floor = new THREE.Mesh(
-  new THREE.PlaneGeometry(RW, RD),
-  new THREE.MeshStandardMaterial({ map: gridTexture(), roughness: 0.9, metalness: 0.0 })
-);
-floor.rotation.x = -Math.PI / 2;
-floor.receiveShadow = true;
-scene.add(floor);
-
-const ceiling = new THREE.Mesh(
-  new THREE.PlaneGeometry(RW, RD),
-  new THREE.MeshStandardMaterial({ color: 0xf0f2f5, roughness: 1.0 })
-);
-ceiling.rotation.x = Math.PI / 2;
-ceiling.position.y = RH;
-scene.add(ceiling);
-
-const wallMat = new THREE.MeshStandardMaterial({ color: 0xe4e7ec, roughness: 0.95, metalness: 0.0 });
-function wall(w, h, x, y, z, ry) {
-  const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), wallMat);
-  m.position.set(x, y, z);
-  m.rotation.y = ry;
-  m.receiveShadow = true;
-  scene.add(m);
+function woodTexture() {
+  const S = 256, c = document.createElement('canvas'); c.width = c.height = S;
+  const x = c.getContext('2d');
+  x.fillStyle = '#241610'; x.fillRect(0, 0, S, S);
+  for (let i = 0; i < 220; i++) {
+    const g = 18 + Math.random() * 40;
+    x.strokeStyle = `rgba(${g},${g * 0.6},${g * 0.35},${0.15 + Math.random() * 0.2})`;
+    x.lineWidth = 0.6 + Math.random() * 1.6;
+    const px = Math.random() * S;
+    x.beginPath(); x.moveTo(px, 0);
+    x.bezierCurveTo(px + (Math.random() - 0.5) * 20, S * 0.33, px + (Math.random() - 0.5) * 20, S * 0.66, px + (Math.random() - 0.5) * 14, S);
+    x.stroke();
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 8; t.encoding = THREE.sRGBEncoding;
+  return t;
 }
-wall(RW, RH, 0, RH / 2, -RD / 2, 0);
-wall(RW, RH, 0, RH / 2, RD / 2, Math.PI);
-wall(RD, RH, -RW / 2, RH / 2, 0, Math.PI / 2);
-wall(RD, RH, RW / 2, RH / 2, 0, -Math.PI / 2);
 
-// ── SHOWCASE BLOCK ──
-const block = new THREE.Mesh(
-  new THREE.BoxGeometry(1.4, 1.4, 1.4),
-  new THREE.MeshStandardMaterial({ color: 0xffcf4d, roughness: 0.35, metalness: 0.25 })
-);
-block.position.set(0, 0.7, 0);
-block.castShadow = true;
-block.receiveShadow = true;
-scene.add(block);
+const bookTex = bookTexture();
+const woodTex = woodTexture();
 
-// ── PLAYER STATE ──
+// ── MATERIALS ──
+const matBook  = new THREE.MeshStandardMaterial({ map: bookTex, roughness: 0.92, metalness: 0.0 });
+const matWood  = new THREE.MeshStandardMaterial({ map: woodTex, roughness: 0.55, metalness: 0.05, color: 0x9a7048 });
+const matDark  = new THREE.MeshStandardMaterial({ map: woodTex, roughness: 0.6,  metalness: 0.05, color: 0x4a3320 });
+const matBrass = new THREE.MeshStandardMaterial({ color: 0xcaa24a, roughness: 0.32, metalness: 0.95 });
+const matGold  = new THREE.MeshStandardMaterial({ color: 0x3a2a10, emissive: 0xffb347, emissiveIntensity: 1.5, roughness: 0.5, metalness: 0.4 });
+const matWin   = new THREE.MeshStandardMaterial({ color: 0x0a1424, emissive: 0xbcd6ff, emissiveIntensity: 1.7, roughness: 1 });
+const matFlame = new THREE.MeshStandardMaterial({ color: 0x1a1206, emissive: 0xffa542, emissiveIntensity: 3.0 });
+
+// ── HELPERS ──
+function box(w, h, d, mat, x, y, z, parent) {
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+  m.position.set(x, y, z); m.castShadow = m.receiveShadow = true;
+  (parent || scene).add(m); return m;
+}
+
+// ── LAYOUT CONSTANTS ──
+const VOID = 6;     // half-width of central void
+const OUTER = 11;   // half-width of walkable ring / walls
+const Y0 = -22, Y1 = 34;         // vertical extent of the shaft
+const LEVELS = [-16, -8, 0, 8, 16, 24];
+
+// ── BOOKSHELF WALLS ──
+const WALL_H = Y1 - Y0, WALL_MID = (Y0 + Y1) / 2;
+const wallTex = bookTex;
+function bookWall(x, z, ry) {
+  const t = wallTex.clone(); t.needsUpdate = true;
+  t.repeat.set(OUTER * 2 / 2.2, WALL_H / 2.2);
+  const m = new THREE.Mesh(
+    new THREE.PlaneGeometry(OUTER * 2, WALL_H),
+    new THREE.MeshStandardMaterial({ map: t, roughness: 0.92 })
+  );
+  m.position.set(x, WALL_MID, z); m.rotation.y = ry; m.receiveShadow = true; scene.add(m);
+}
+bookWall(0, -OUTER, 0);
+bookWall(0,  OUTER, Math.PI);
+bookWall(-OUTER, 0,  Math.PI / 2);
+bookWall( OUTER, 0, -Math.PI / 2);
+
+// ── GALLERY RINGS + RAILINGS ──
+function railing(len) {
+  const g = new THREE.Group();
+  box(len, 0.12, 0.14, matBrass, 0, 1.05, 0, g);   // top rail
+  box(len, 0.08, 0.12, matDark,  0, 0.12, 0, g);    // bottom rail
+  box(len, 0.05, 0.03, matGold,  0, 0.55, 0.08, g); // glowing trim
+  for (let p = -len / 2 + 0.3; p <= len / 2 - 0.3; p += 0.55) {
+    const b = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.9, 6), matWood);
+    b.position.set(p, 0.55, 0); b.castShadow = true; g.add(b);
+  }
+  return g;
+}
+function ring(y) {
+  const t = 0.4, ty = y - t / 2, w = OUTER - VOID;
+  box(OUTER * 2, t, w, matWood, 0, ty, -(VOID + w / 2));
+  box(OUTER * 2, t, w, matWood, 0, ty,  (VOID + w / 2));
+  box(w, t, VOID * 2, matWood, -(VOID + w / 2), ty, 0);
+  box(w, t, VOID * 2, matWood,  (VOID + w / 2), ty, 0);
+  // brass cornice under each ring for relief
+  box(OUTER * 2, 0.2, 0.25, matBrass, 0, y - 0.5, -VOID);
+  box(OUTER * 2, 0.2, 0.25, matBrass, 0, y - 0.5,  VOID);
+  const sides = [[0, -VOID, 0, OUTER * 2 - VOID * 2 + 12], [0, VOID, Math.PI, 12], [-VOID, 0, Math.PI / 2, 12], [VOID, 0, -Math.PI / 2, 12]];
+  [[0, -VOID, 0], [0, VOID, Math.PI], [-VOID, 0, Math.PI / 2], [VOID, 0, -Math.PI / 2]].forEach(([rx, rz, rr]) => {
+    const r = railing(VOID * 2); r.position.set(rx, y, rz); r.rotation.y = rr; scene.add(r);
+  });
+}
+LEVELS.forEach(ring);
+
+// ── STAIRCASES ──
+function staircase(nSteps) {
+  const g = new THREE.Group();
+  const sw = 2.4, sh = 0.42, sd = 0.5;
+  const run = nSteps * sd, rise = nSteps * sh, L = Math.hypot(run, rise), ang = Math.atan2(rise, run);
+  for (let i = 0; i < nSteps; i++) {
+    box(sw, 0.14, sd * 1.25, matWood, 0, i * sh + sh, i * sd + sd / 2, g);      // tread
+    box(sw, sh, 0.08, matDark, 0, i * sh + sh / 2, i * sd, g);                   // riser
+  }
+  [-1, 1].forEach(s => {
+    const str = box(0.18, 0.55, L, matDark, s * sw / 2, rise / 2, run / 2, g);   // stringer
+    str.rotation.x = -ang;
+    const trim = box(0.05, 0.07, L, matGold, s * (sw / 2 + 0.11), rise / 2, run / 2, g);
+    trim.rotation.x = -ang;
+    const rail = box(0.1, 0.1, L, matBrass, s * sw / 2, rise / 2 + 0.95, run / 2, g);
+    rail.rotation.x = -ang;
+    for (let i = 0; i < nSteps; i += 2) {
+      const b = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.9, 6), matWood);
+      b.position.set(s * sw / 2, i * sh + sh + 0.45, i * sd + sd / 2); b.castShadow = true; g.add(b);
+    }
+  });
+  return g;
+}
+const STAIRS = [
+  [-5, -2, -6, 0], [6, -4, 4, Math.PI], [-6, 2, 5, Math.PI / 2], [4, 4, -6, -Math.PI / 2],
+  [-4, 7, -5, 0.35], [5, 9, 3, Math.PI + 0.25], [-6, 12, -2, Math.PI / 2 - 0.2],
+  [3, 14, -6, -Math.PI / 2], [-3, 18, 4, Math.PI], [5, 20, -4, 0.2], [-5, 22, -3, Math.PI / 2],
+];
+STAIRS.forEach(([x, y, z, r]) => {
+  const s = staircase(16); s.position.set(x, y, z); s.rotation.y = r; scene.add(s);
+});
+
+// ── WINDOWS (glow sources) ──
+function windowPanel(x, y, z, ry) {
+  const g = new THREE.Group();
+  box(2.8, 3.8, 0.2, matDark, 0, 0, 0, g);            // frame
+  box(2.3, 3.3, 0.05, matWin, 0, 0, 0.12, g);         // glowing glass
+  box(0.12, 3.3, 0.06, matDark, 0, 0, 0.15, g);       // mullion
+  box(2.3, 0.12, 0.06, matDark, 0, 0, 0.15, g);
+  g.position.set(x, y, z); g.rotation.y = ry; scene.add(g);
+  const l = new THREE.PointLight(0xaecbff, 1.5, 22, 2); l.position.set(x, y, z + Math.cos(ry) * 1.5); scene.add(l);
+}
+windowPanel(-4, 4, -OUTER + 0.2, 0);
+windowPanel(4, 17, -OUTER + 0.2, 0);
+windowPanel(OUTER - 0.2, 9, 3, -Math.PI / 2);
+windowPanel(-OUTER + 0.2, 14, -4, Math.PI / 2);
+windowPanel(3, 6, OUTER - 0.2, Math.PI);
+
+// ── LANTERNS (warm brass accents) ──
+function lantern(x, y, z) {
+  const s = new THREE.Mesh(new THREE.SphereGeometry(0.12, 10, 10), matFlame);
+  s.position.set(x, y, z); scene.add(s);
+  const l = new THREE.PointLight(0xffa542, 2.4, 20, 2); l.position.set(x, y, z); scene.add(l);
+}
+lantern(-VOID + 0.2, 1.6, -VOID + 0.2);
+lantern(VOID - 0.2, 1.6, VOID - 0.2);
+lantern(-VOID + 0.2, 9.6, VOID - 0.2);
+lantern(VOID - 0.2, 17.6, -VOID + 0.2);
+
+// ── LIGHTING ──
+scene.add(new THREE.HemisphereLight(0x6a86ad, 0x241d16, 1.15));
+scene.add(new THREE.AmbientLight(0x33405a, 0.7));
+
+const shaft = new THREE.DirectionalLight(0xbcd4ff, 1.4);
+shaft.position.set(4, 60, 8);
+shaft.castShadow = true;
+shaft.shadow.mapSize.set(2048, 2048);
+shaft.shadow.camera.near = 1; shaft.shadow.camera.far = 120;
+shaft.shadow.camera.left = -16; shaft.shadow.camera.right = 16;
+shaft.shadow.camera.top = 16; shaft.shadow.camera.bottom = -16;
+shaft.shadow.bias = -0.0004; shaft.shadow.radius = 5;
+scene.add(shaft);
+
+// top skylight glow
+box(VOID * 2, 0.1, VOID * 2, matWin, 0, Y1 - 0.5, 0);
+
+// ── DUST MOTES ──
+const dustN = 500, dg = new THREE.BufferGeometry(), dp = new Float32Array(dustN * 3);
+for (let i = 0; i < dustN; i++) {
+  dp[i * 3] = (Math.random() - 0.5) * OUTER * 2;
+  dp[i * 3 + 1] = Math.random() * (Y1 - Y0) + Y0;
+  dp[i * 3 + 2] = (Math.random() - 0.5) * OUTER * 2;
+}
+dg.setAttribute('position', new THREE.BufferAttribute(dp, 3));
+const dust = new THREE.Points(dg, new THREE.PointsMaterial({ color: 0xd8e4ff, size: 0.04, transparent: true, opacity: 0.5, depthWrite: false }));
+scene.add(dust);
+
+// ── POST-PROCESSING ──
+let composer = null, fxaaPass = null;
+if (THREE.EffectComposer) {
+  composer = new THREE.EffectComposer(renderer);
+  composer.setPixelRatio(PR);
+  composer.setSize(innerWidth, innerHeight);
+  composer.addPass(new THREE.RenderPass(scene, camera));
+  const bloom = new THREE.UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.6, 0.65, 0.62);
+  composer.addPass(bloom);
+  fxaaPass = new THREE.ShaderPass(THREE.FXAAShader);
+  fxaaPass.material.uniforms['resolution'].value.set(1 / (innerWidth * PR), 1 / (innerHeight * PR));
+  composer.addPass(fxaaPass);
+}
+
+// ── PLAYER ──
 const keys = {};
-let yaw = 0, pitch = 0;
-let isLocked = false;
-let yVel = 0, onGround = true;
+let yaw = 0, pitch = 0, isLocked = false, yVel = 0, onGround = true;
+const SPEED = 0.06, GRAVITY = -0.012, JUMP = 0.17, BASE_Y = 1.7;
 
-const SPEED = 0.065;
-const LIMIT = 7.4;
-const GRAVITY = -0.012;
-const JUMP = 0.18;
+function walkable(x, z) {
+  const m = Math.max(Math.abs(x), Math.abs(z));
+  return m > VOID + 0.4 && m < OUTER - 0.35;
+}
 
-// ── INPUT ──
 document.addEventListener('keydown', e => {
   keys[e.code] = true;
-  if (e.code === 'Space') {
-    e.preventDefault();
-    if (onGround && isLocked) { yVel = JUMP; onGround = false; }
-  }
+  if (e.code === 'Space') { e.preventDefault(); if (onGround && isLocked) { yVel = JUMP; onGround = false; } }
 });
 document.addEventListener('keyup', e => { keys[e.code] = false; });
-
 document.addEventListener('mousemove', e => {
   if (!isLocked) return;
   yaw -= e.movementX * 0.002;
   pitch -= e.movementY * 0.002;
-  pitch = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, pitch));
+  pitch = Math.max(-Math.PI / 2.2, Math.min(Math.PI / 2.2, pitch));
 });
-
 document.addEventListener('pointerlockchange', () => {
   isLocked = (document.pointerLockElement === canvas);
   crosshair.style.opacity = isLocked ? '1' : '0';
   hud.style.opacity = isLocked ? '1' : '0';
 });
-
-canvas.addEventListener('click', () => {
-  if (!isLocked && overlay.style.display === 'none') canvas.requestPointerLock();
-});
-
+canvas.addEventListener('click', () => { if (!isLocked && overlay.style.display === 'none') canvas.requestPointerLock(); });
 document.getElementById('enter-btn').addEventListener('click', () => {
   overlay.style.opacity = '0';
-  setTimeout(() => {
-    overlay.style.display = 'none';
-    canvas.requestPointerLock();
-  }, 800);
+  setTimeout(() => { overlay.style.display = 'none'; canvas.requestPointerLock(); }, 800);
 });
 
 // ── LOOP ──
 let t = 0;
 function animate() {
   requestAnimationFrame(animate);
-  t += 0.01;
-
-  camera.rotation.y = yaw;
-  camera.rotation.x = pitch;
+  t += 0.016;
+  camera.rotation.y = yaw; camera.rotation.x = pitch;
 
   if (isLocked) {
     const dir = new THREE.Vector3();
@@ -239,30 +377,39 @@ function animate() {
     if (keys['KeyS']) dir.z += 1;
     if (keys['KeyA']) dir.x -= 1;
     if (keys['KeyD']) dir.x += 1;
-
     if (dir.lengthSq() > 0) {
       dir.normalize().multiplyScalar(SPEED).applyEuler(new THREE.Euler(0, yaw, 0));
-      const nx = camera.position.x + dir.x;
-      const nz = camera.position.z + dir.z;
-      if (Math.abs(nx) < LIMIT) camera.position.x = nx;
-      if (Math.abs(nz) < LIMIT) camera.position.z = nz;
+      const nx = camera.position.x + dir.x, nz = camera.position.z + dir.z;
+      if (walkable(nx, camera.position.z)) camera.position.x = nx;
+      if (walkable(camera.position.x, nz)) camera.position.z = nz;
     }
-
-    yVel += GRAVITY;
-    camera.position.y += yVel;
-    if (camera.position.y <= 1.7) { camera.position.y = 1.7; yVel = 0; onGround = true; }
+    yVel += GRAVITY; camera.position.y += yVel;
+    if (camera.position.y <= BASE_Y) { camera.position.y = BASE_Y; yVel = 0; onGround = true; }
   }
 
-  block.rotation.y = t * 0.4;
+  // drifting dust
+  const pos = dust.geometry.attributes.position.array;
+  for (let i = 0; i < dustN; i++) {
+    pos[i * 3 + 1] -= 0.004;
+    pos[i * 3] += Math.sin(t * 0.5 + i) * 0.002;
+    if (pos[i * 3 + 1] < Y0) pos[i * 3 + 1] = Y1;
+  }
+  dust.geometry.attributes.position.needsUpdate = true;
 
-  renderer.render(scene, camera);
+  // lantern flicker
+  matFlame.emissiveIntensity = 2.8 + Math.sin(t * 7) * 0.4 + Math.sin(t * 13) * 0.2;
+
+  if (composer) composer.render(); else renderer.render(scene, camera);
 }
 animate();
 
 window.addEventListener('resize', () => {
-  camera.aspect = innerWidth / innerHeight;
-  camera.updateProjectionMatrix();
+  camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
   renderer.setSize(innerWidth, innerHeight);
+  if (composer) {
+    composer.setSize(innerWidth, innerHeight);
+    fxaaPass.material.uniforms['resolution'].value.set(1 / (innerWidth * PR), 1 / (innerHeight * PR));
+  }
 });
 </script>
 </body>
